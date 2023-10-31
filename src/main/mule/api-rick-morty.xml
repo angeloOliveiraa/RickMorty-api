@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:os="http://www.mulesoft.org/schema/mule/os" xmlns:email="http://www.mulesoft.org/schema/mule/email" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd 
+http://www.mulesoft.org/schema/mule/email http://www.mulesoft.org/schema/mule/email/current/mule-email.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd">
+    <http:listener-config name="api-rick-morty-httpListenerConfig">
+        <http:listener-connection host="0.0.0.0" port="8081" />
+    </http:listener-config>
+    <apikit:config name="api-rick-morty-config" api="resource::e7edc62f-36ad-4cd1-a7b3-daf53daf267e:api-rick-morty:1.0.0:raml:zip:api-rick-morty.raml" outboundHeadersMapName="outboundHeaders" httpStatusVarName="httpStatus" />
+    <http:request-config name="HTTP_Request_configuration" doc:name="HTTP Request configuration" doc:id="ab22f618-3ecf-4112-b833-b6c48006196c" >
+		<http:request-connection protocol="HTTPS" port="443" host="rickandmortyapi.com"/>
+	</http:request-config>
+	
+	<email:smtp-config name="Email_SMTP" doc:name="Email SMTP" doc:id="7ef76531-bdf0-49b6-abde-e6fac8dafb2f" >
+		<email:smtp-connection host="smtp.titan.email" port="587" user="angelo.araujo@globalred.com.br" password="@Ngelo96oi" >
+			<email:properties >
+				<email:property key="mail.smtp.starttls.enable" value="true" />
+			</email:properties>
+		</email:smtp-connection>
+	</email:smtp-config>
+	<os:config name="ObjectStore_Config" doc:name="ObjectStore Config" doc:id="9d60be81-8844-4950-9a39-72dbb99a2363" >
+		<os:connection >
+			<reconnection />
+		</os:connection>
+	</os:config>
+	<os:object-store name="Object_store" doc:name="Object store" doc:id="0f152b1b-fb06-4217-9b0f-49986bed0655" maxEntries="100" entryTtl="1" entryTtlUnit="HOURS" expirationInterval="30" config-ref="ObjectStore_Config"/>
+	<flow name="api-rick-morty-main">
+        <http:listener config-ref="api-rick-morty-httpListenerConfig" path="/api/*">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <apikit:router config-ref="api-rick-morty-config" />
+		<error-handler ref="apikit-errorhandler" />
+       
+    </flow>
+    <flow name="api-rick-morty-console">
+        <http:listener config-ref="api-rick-morty-httpListenerConfig" path="/console/*">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <apikit:console config-ref="api-rick-morty-config" />
+		<error-handler ref="console-errorhandler" />
+       
+    </flow>
+    <flow name="get:\personagem:api-rick-morty-config">
+		<logger level="INFO" message="get:\personagem:api-rick-morty-config" />
+		<set-variable value="#[randomInt(826) as String]" doc:name="Random" doc:id="d63e29a9-8e66-4c6e-a4ea-95e5e8130e33" variableName="random"/>
+		<set-variable value="#[attributes.queryParams.key]" doc:name="KEY" doc:id="6821780d-6fe5-4694-a0c9-5354a80fe328" variableName="key"/>
+		<http:request method="GET" doc:name="Request" doc:id="ffcc4ab2-db0a-43b8-8f30-c658e43afed0" config-ref="HTTP_Request_configuration" path='#["/api/character/" ++ vars.random]'/>
+		<ee:transform doc:name="Transform Message" doc:id="a50ba1b8-a34a-41d2-809e-c5145046a689" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json 
+---
+{
+	"Nome": payload.name,
+	"Image":payload.image
+	
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<set-variable value="#[payload]" doc:name="Set Variable" doc:id="f9d8cb8c-6d76-43d5-bc9d-d0765fb16125" variableName="data"/>
+		<email:send doc:name="Send" doc:id="7e8e6707-7644-472b-ada9-c5f177ed957c" config-ref="Email_SMTP" fromAddress="angelo.araujo@globalred.com.br" subject="Seu personagem: ">
+			<email:to-addresses >
+				<email:to-address value="angelo.araujo@globalred.com.br" />
+				<email:to-address value="carlos.santos@globalred.com.br" />
+			</email:to-addresses>
+			<email:cc-addresses >
+			</email:cc-addresses>
+			<email:body contentType="text/html" >
+				<email:content ><![CDATA[#["<p>O nome do personagem é: <p/>" ++ payload.Nome ++ "<br><br> <img src=" ++ payload.Image ++ ">"]]]></email:content>
+			</email:body>
+		</email:send>
+		<os:contains doc:name="Contains" doc:id="a31cf456-931f-47af-9b73-f698c60812f0" objectStore="Object_store" key="#[vars.key]"/>
+		<choice doc:name="Choice" doc:id="46c9d3b8-ca39-4bc4-a8d2-94a992c57e62" >
+			<when expression="#[payload == true]">
+				<logger level="INFO" doc:name="Logger" doc:id="c0adaf97-dfab-45f7-a860-155f457bc16e" message="A key ja existe no Object Store"/>
+			</when>
+			<otherwise >
+				<os:store doc:name="Store" doc:id="b6263db5-5865-420c-9e3a-f4ecf6620fa6" key="#[vars.key]" objectStore="Object_store" >
+					<os:value ><![CDATA[#[vars.data]]]></os:value>
+				</os:store>
+				<logger level="INFO" doc:name="Logger" doc:id="b7eec574-e952-4a04-a6c9-5356eab68830" message="O dado foi salvo no Object store"/>
+			</otherwise>
+		</choice>
+		<ee:transform doc:name="Transform Message" doc:id="a2344855-2ceb-4ba1-887d-24a08456d4da" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+
+---
+{
+	
+	"message": "Operação de store completo",
+	 "data": vars.data
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+    </flow>
+	<flow name="TestKey" doc:id="954a27d4-57d0-43bf-8db3-a793cd32d9d8" >
+		<http:listener doc:name="Listener" doc:id="7b88bebf-02fa-4fae-a6e8-86a9e1e1729e" config-ref="api-rick-morty-httpListenerConfig" path="/check"/>
+		<os:retrieve doc:name="Retrieve" doc:id="24d273e6-7762-4031-b047-85b500bae44e" key="#[attributes.queryParams.key]" objectStore="Object_store">
+			<os:default-value ><![CDATA[Nenhum dado encontrado]]></os:default-value>
+		</os:retrieve>
+		<logger level="INFO" doc:name="Logger" doc:id="1f4b067d-43a9-4b0b-b818-45c6d26e2553" message="#[payload]"/>
+	</flow>
+</mule>
